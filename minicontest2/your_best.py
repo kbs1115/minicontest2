@@ -17,199 +17,194 @@ import random, time, util
 from game import Directions
 import game
 
+
 #################
 # Team creation #
 #################
 
 def createTeam(firstIndex, secondIndex, isRed,
-               first = 'DummyAgent', second = 'DummyAgent'):
-  """
-  This function should return a list of two agents that will form the
-  team, initialized using firstIndex and secondIndex as their agent
-  index numbers.  isRed is True if the red team is being created, and
-  will be False if the blue team is being created.
+               first='CooperativeAgent', second='CooperativeAgent'):
+    """
+    This function should return a list of two agents that will form the
+    team, initialized using firstIndex and secondIndex as their agent
+    index numbers.  isRed is True if the red team is being created, and
+    will be False if the blue team is being created.
 
-  As a potentially helpful development aid, this function can take
-  additional string-valued keyword arguments ("first" and "second" are
-  such arguments in the case of this function), which will come from
-  the --redOpts and --blueOpts command-line arguments to capture.py.
-  For the nightly contest, however, your team will be created without
-  any extra arguments, so you should make sure that the default
-  behavior is what you want for the nightly contest.
-  """
+    As a potentially helpful development aid, this function can take
+    additional string-valued keyword arguments ("first" and "second" are
+    such arguments in the case of this function), which will come from
+    the --redOpts and --blueOpts command-line arguments to capture.py.
+    For the nightly contest, however, your team will be created without
+    any extra arguments, so you should make sure that the default
+    behavior is what you want for the nightly contest.
+    """
 
-  # The following line is an example only; feel free to change it.
-  return [eval(first)(firstIndex), eval(second)(secondIndex)]
+    # The following line is an example only; feel free to change it.
+    return [eval(first)(firstIndex), eval(second)(secondIndex)]
+
 
 ##########
 # Agents #
 ##########
 
-class DummyAgent(CaptureAgent):
-  """
-  A Dummy agent to serve as an example of the necessary agent structure.
-  You should look at baselineTeam.py for more details about how to
-  create an agent as this is the bare minimum.
-  """
+class CooperativeAgent(CaptureAgent):
+    # 각 에이전트가 목표로 가고 있는 food를 표시해 같은 food를 향하지 않도록 하기 위한 변수
+    currentGoals = dict()
 
-  def registerInitialState(self, gameState):
-    """
-    This method handles the initial setup of the
-    agent to populate useful fields (such as what team
-    we're on).
+    def registerInitialState(self, gameState):
+        self.start = gameState.getAgentPosition(self.index)
+        CaptureAgent.registerInitialState(self, gameState)
 
-    A distanceCalculator instance caches the maze distances
-    between each pair of positions, so your agents can use:
-    self.distancer.getDistance(p1, p2)
+        # 자신의 팀 영역의 경계가 되는 X 좌표 계산
+        self.boundaryX = (gameState.data.layout.width - 2) // 2
 
-    IMPORTANT: This method may run for at most 15 seconds.
-    """
+        if not self.red:
+            self.boundaryX += 1
 
-    '''
-    Make sure you do not delete the following line. If you would like to
-    use Manhattan distances instead of maze distances in order to save
-    on initialization time, please take a look at
-    CaptureAgent.registerInitialState in captureAgents.py.
-    '''
-    CaptureAgent.registerInitialState(self, gameState)
+        # 자신의 팀 영역의 경계가 되는 모든 좌표 계산
+        self.boundaries = []
+        for i in range(gameState.data.layout.height):
+            if not gameState.hasWall(self.boundaryX, i):
+                self.boundaries.append((self.boundaryX, i))
 
-    '''
-    Your initialization code goes here, if you need any.
-    '''
-    self.start = gameState.getAgentPosition(self.index)
+    def chooseAction(self, gameState):
+        """
+        Picks among actions randomly.
+        """
+        actions = gameState.getLegalActions(self.index)
 
-    # Calculate the boundary x coordinate of two teams
-    self.boundaryOfTeam = (gameState.data.layout.width - 2) // 2
-    if self.red is False:
-      self.boundaryOfTeam += 1    
+        values = [self.evaluate(gameState, action) for action in actions]
 
+        maxValue = max(values)
+        bestActions = [action for action, value in zip(actions, values) if value == maxValue]
 
-  def chooseAction(self, gameState):
-    """
-    Picks among actions randomly.
-    """
-    actions = gameState.getLegalActions(self.index)
+        return random.choice(bestActions)
 
-    '''
-    You should change this in your own agent.
-    '''
-    values = [self.evaluate(gameState, a) for a in actions] # Calculate value for legal Actions
-    maxValue = max(values)
-    bestActions = [a for a, v in zip(actions, values) if v == maxValue] # choose best Actions
+    def getSuccessor(self, gameState, action):
+        # 현재 상태에서 특정한 액션을 취했을 때 다음 상태를 생성
+        successor = gameState.generateSuccessor(self.index, action)
+        return successor
 
-    return random.choice(bestActions)
-  
+    def evaluate(self, gameState, action):
+        # 에이전트에 따라 방어하는 food의 개수가 15개 또는 10개 이하가 되면 수비 모드로 전환
+        leftFood = 10 if self.index == self.getTeam(gameState)[0] else 15
 
-  # Generate next state for particular action
-  def getSuccessor(self, gameState, action):
-    successor = gameState.generateSuccessor(self.index, action)
-    return successor  
-  
+        # 현재 우리 팀의 food가 일정 개수 이하가 된다면 팀 영역으로 돌아와 수비 모드로 전환
+        if len(self.getFoodYouAreDefending(gameState).asList()) < leftFood:
+            features = self.getDefensiveFeatures(gameState, action)
+            weights = self.getDefensiveWeights()
 
-  # Return value of linear combination of features and weights
-  def evaluate(self, gameState, action):
-    # Get the score diff
-    winningScore = self.getScore(gameState)
+        # 현재 우리 팀의 food가 15개 넘게 남아 있다면 상대편 진영에서 food를 모음
+        else:
+            # 어떤 액션의 가치를 feature * weights의 linear combination으로 계산
+            features = self.getOffensiveFeatures(gameState, action)
+            weights = self.getOffensiveWeights()
 
-    # if score diff is larger than 3, or Agent carries more than 3 foods, activate Defensive Mode
-    if winningScore > 0 or gameState.getAgentState(self.index).numCarrying > 1:
-      features = self.defensiveModeFeatures(gameState, action)
-      weights = self.defensiveModeWeights()
-    # else, get foods at enemy's area
-    else:
-      features = self.offensiveModeFeatures(gameState, action)
-      weights = self.offensiveModeWeights()
+        return features * weights
 
-    return features * weights
+    def getOffensiveFeatures(self, gameState, action):
+        features = util.Counter()
+        successor = self.getSuccessor(gameState, action)
 
-  
-  def defensiveModeFeatures(self, gameState, action):
-    features = util.Counter()
-    successor = self.getSuccessor(gameState, action)
+        myState = successor.getAgentState(self.index)
+        myPos = myState.getPosition()
 
-    myState = successor.getAgentState(self.index)
-    myPos = myState.getPosition()
+        # 현재 먹은 food가 2개 이상이라면 팀 영역으로 돌아가 점수 올리도록 feature 설정
+        if gameState.getAgentState(self.index).numCarrying >= 3:
+            features['distToHome'] = min([self.getMazeDistance(myPos, boundary) for boundary in self.boundaries])
 
-    # calculate the closest location and distance to the boundary
-    features['closestBoundaryDist'] = 9999
+        else:
+            foods = self.getFood(successor).asList()
+            features['foodLeft'] = len(foods)
+            features['distToFood'] = 9999
 
-    for i in range(successor.data.layout.height):
-      if not successor.hasWall(self.boundaryOfTeam, i):
-        dist = self.getMazeDistance(myPos, (self.boundaryOfTeam, i))
-        if dist < features['closestBoundaryDist']:
-          features['closestBoundaryDist'] = dist
+            for food in foods:
+                # 가장 가까운 food가 다른 에이전트와 겹치면 다음으로 가까운 food를 선택
+                if (self.index + 2) % 4 in self.currentGoals and food == self.currentGoals[(self.index + 2) % 4]:
+                    continue
 
-    # calculate the closest ghost's distance
-    opponents = [successor.getAgentState(a) for a in self.getOpponents(successor)]
-    activeGhosts = [ghost for ghost in opponents if not ghost.isPacman and ghost.getPosition() is not None and ghost.scaredTimer == 0]
-    
-    features['closestGhostDist'] = 0
+                dist = self.getMazeDistance(myPos, food)
+                if dist < features['distToFood']:
+                    features['distToFood'] = dist
+                    self.currentGoals[self.index] = food
 
-    if len(activeGhosts) > 0:
-      ghostDists = [self.getMazeDistance(myPos, ghost.getPosition()) for ghost in activeGhosts]
-      features['closestGhostDist'] = 1 / (min(ghostDists) * min(ghostDists))  # if dist is lower, more dangerous
+        # 가장 가까운 ghost까지의 거리 계산
+        enemies = [successor.getAgentState(i) for i in self.getOpponents(successor)]
+        ghosts = [enemy for enemy in enemies if
+                  not enemy.isPacman and enemy.getPosition() is not None and enemy.scaredTimer == 0]
 
-    # if Agent is in its area, ghostdist and boundarydist is useless
-    if not myState.isPacman:
-      features['closestGhostDist'] = 0
-      features['closestBoundaryDist'] = 0
-      features['isGhost'] = 1
+        if len(ghosts) > 0:
+            ghostsDist = [self.getMazeDistance(myPos, ghost.getPosition()) for ghost in ghosts]
+            # 가장 가까운 ghost까지의 거리가 멀 때는 큰 영향을 끼치지 않지만 가까워질수록 그 영향이 커지도록 반비례 관계
+            features['distToGhost'] = 1 / min(ghostsDist)
 
-    # calculate x coordinate difference to the boundary
-    features['boundXCordinate'] = abs(myPos[0] - self.boundaryOfTeam)
+            # 어떤 행동의 결과 고스트에게 잡혀 원래 위치로 돌아가게 된다면 그 방향으로 가지 않게 큰 패널티를 줌
+            if myPos == self.start:
+                features['distanceToGhost'] = 9999
 
-    # calculate the closest pacman's distance
-    activePacmans = [pacman for pacman in opponents if pacman.isPacman and pacman.getPosition() is not None]
+            # food가 있는 곳이 3면이 막힌 터널이고, 고스트가 3번의 이동 안에 도착할 수 있으면
+            # 그 터널 속 food는 먹지 않도록 feature 설정
+            wallCount = 0
+            for i in [-1, 1]:
+                if successor.hasWall(int(myPos[0] + i), int(myPos[1])):
+                    wallCount += 1
+                if successor.hasWall(int(myPos[0]), int(myPos[1] + i)):
+                    wallCount += 1
 
-    features['closestPacmanDist'] = 0
-    features['pacmanNum'] = len(activePacmans)
-    if len(activePacmans) > 0:
-      pacmanDists = [self.getMazeDistance(myPos, pacman.getPosition()) for pacman in activePacmans]
-      features['closestPacmanDist'] = min(pacmanDists)  # if dist is lower, more dangerous
+            if wallCount == 3 and min(ghostsDist) <= 3:
+                features['isTunnel'] = 1
 
-    if myState.isPacman:
-      features['closestPacmanDist'] = 0
-      features['boundaryXCordinate'] = 0
-      features['isGhost'] = 0
-      features['pacmanNum'] = 0
+        # 아직 3개 이상 food를 carry하지 않고 있더라도 고스트를 피해 도망다니던 중 영역 경계에 도달하면
+        # 팀 영역으로 들어가 점수를 올리도록 feature 설정
+        features['successorScore'] = self.getScore(successor)
 
-    return features
-  
+        return features
 
-  def defensiveModeWeights(self):
-    return {'closestBoundaryDist': -1, "closestGhostDist": -10, "isGhost": 10000000, "closestPacmanDist": -5, "boundaryXCordinate": -1, "pacmanNum": -100}
-  
+    def getOffensiveWeights(self):
+        # 터널인 경우 foodLeft가 -1 돼서 전체적으로 +100 되는 것을 상쇄시키고
+        # 그것보다 더 패널티를 주어야 하므로 -100 보다 더 작게 weight 설정
+        return {'foodLeft': -100, 'distToHome': -1, 'distToFood': -1, 'distToGhost': -15, 'isTunnel': -110, 'successorScore': 10}
 
-  def offensiveModeFeatures(self, gameState, action):
-    features = util.Counter()
-    successor = self.getSuccessor(gameState, action)
+    def getDefensiveFeatures(self, gameState, action):
+        # 공격 모드일 때 목표했던 가장 가까운 food 목표 해제
+        if self.index in self.currentGoals:
+            del self.currentGoals[self.index]
 
-    myState = successor.getAgentState(self.index)
-    myPos = myState.getPosition()
+        features = util.Counter()
+        successor = self.getSuccessor(gameState, action)
 
-    foods = self.getFood(successor).asList()
-    features['foodNum'] = len(foods)
-    features['distToFood'] = 9999
+        myState = successor.getAgentState(self.index)
+        myPos = myState.getPosition()
 
-    for food in foods:
-      dist = self.getMazeDistance(myPos, food)
-      if dist < features['distToFood']:
-        features['distToFood'] = dist
+        # 액션을 하고 난 후의 invader의 수
+        enemies = [successor.getAgentState(i) for i in self.getOpponents(successor)]
+        invaders = [enemy for enemy in enemies if enemy.isPacman and enemy.getPosition() != None]
+        features["numInvaders"] = len(invaders)
 
-    opponents = [successor.getAgentState(a) for a in self.getOpponents(successor)]
-    activeGhosts = [ghost for ghost in opponents if not ghost.isPacman and ghost.getPosition() is not None and ghost.scaredTimer == 0]
-    
-    features['closestGhostDist'] = 0
+        # invader가 존재한다면 가장 가까운 invader 까지의 거리
+        if len(invaders) > 0:
+            dists = [self.getMazeDistance(myPos, a.getPosition()) for a in invaders]
+            features['invaderDistance'] = min(dists)
 
-    if len(activeGhosts) > 0:
-      ghostDists = [self.getMazeDistance(myPos, ghost.getPosition()) for ghost in activeGhosts]
-      features['closestGhostDist'] = 1 / (min(ghostDists) * min(ghostDists))  # if dist is lower, more dangerous
+        # 액션을 취하고 난 후 invader가 없고, 경계로 부터 멀리 떨어져 있을 경우 가장 가까운 경계까지의 거리
+        else:
+            deltaXCoord = self.boundaryX - myPos[0] if self.red else myPos[0] - self.boundaryX
+            if deltaXCoord >= 4 or deltaXCoord < 0:
+                features['nearBoundary'] = min([self.getMazeDistance(myPos, boundary) for boundary in self.boundaries])
 
-    return features
-  
+        # food를 모으던 중 수비 모드로 전환되어서 팀 영역으로 돌아갈 때 고스트가 일정 거리 안으로 들어오는 방향으로
+        # 가지 않도록하는 feature
+        if gameState.getAgentState(self.index).isPacman:
+            ghosts = [enemy for enemy in enemies if
+                      not enemy.isPacman and enemy.getPosition() is not None and enemy.scaredTimer == 0]
+            if len(ghosts) > 0:
+                dists = [self.getMazeDistance(myPos, ghost.getPosition()) for ghost in ghosts]
+                if min(dists) <= 2 or myPos == self.start:
+                    features['nearGhost'] = 1
 
-  def offensiveModeWeights(self):
-    return {"closestGhostDist": -50, 'distToFood': -1, "foodNum": -100}
+        return features
 
-    
-
+    def getDefensiveWeights(self):
+        # invader의 수/ invader까지의 거리 / boundary까지의 거리는 작을수록 좋으므로 음의 weight
+        # 고스트의 주변으로 가지 않도록 nearGhost는 -infinity
+        return {'numInvaders': -100, 'invaderDistance': -1, 'nearBoundary': -1, 'nearGhost': -9999}

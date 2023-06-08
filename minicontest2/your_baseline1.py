@@ -207,12 +207,13 @@ class DummyAgent(CaptureAgent):
 
     if myState.isPacman:
       features['pacman'] = 1
+    
 
     return features
   
 
   def offensiveModeWeights(self):
-    return {"closestGhostDist": -50, 'distToFood': -1, "foodNum": -100, "pacman": 1000}
+    return {"closestGhostDist": -100, 'distToFood': -2, "foodNum": -100, "pacman": 1000}
 
     
 

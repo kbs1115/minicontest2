@@ -212,15 +212,22 @@ class DummyAgent(CaptureAgent):
       ghostDists = [self.getMazeDistance(myPos, ghost.getPosition()) for ghost in activeGhosts]
       features['closestGhostDist'] = 1 / (min(ghostDists) * min(ghostDists))  # if dist is lower, more dangerous
 
-
     if myState.isPacman:
       features['pacman'] = 1
+
+    teams = [successor.getAgentState(a) for a in self.getTeam(successor)]
+    teamPos = [team.getPosition() for team in teams]
+    teamDist = self.getMazeDistance(teamPos[0], teamPos[1])
+    if teamDist == 0:
+      features['teamDist'] = 1
+    else:
+        features['teamDist'] = 1 / teamDist
 
     return features
   
 
   def offensiveModeWeights(self):
-    return {"closestGhostDist": -50, 'distToFood': -1, "foodNum": -100, "pacman": 1000}
+    return {"closestGhostDist": -50, 'distToFood': -1, "foodNum": -100, "pacman": 1000, "teamDist": -16}
 
     
 
